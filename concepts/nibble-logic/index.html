@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Nibble Logic: 8-bit to 4-bit Visualization</title>
+    <style>
+        body { margin: 0; display: flex; height: 100vh; background: #0a0a0a; color: #00ff00; font-family: 'Fira Code', monospace; overflow: hidden; }
+        #code-panel { width: 35%; background: #121212; border-right: 2px solid #333; padding: 20px; overflow-y: auto; }
+        #viz-panel { width: 65%; position: relative; }
+        .code-line { padding: 4px; margin: 2px 0; border-radius: 4px; font-size: 14px; color: #666; }
+        .highlight { background: rgba(0, 255, 0, 0.2); color: #fff; border-left: 3px solid #00ff00; }
+        #overlay { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #00ff00; border-radius: 8px; }
+        .nibble-box { display: inline-block; padding: 5px; border: 1px dashed #555; margin: 0 5px; }
+        .high { color: #ff79c6; }
+        .low { color: #50fa7b; }
+    </style>
+</head>
+<body>
+
+<div id="code-panel">
+    <h3>4-Bit LCD Nibble Logic</h3>
+    <div class="code-line" id="l1">// Your 8-bit Data: 1101 0011</div>
+    <div class="code-line" id="l2">uint8_t data = 0xD3;</div>
+    <div class="code-line"></div>
+    <div class="code-line" id="l3">// 1. Send High Nibble (1101)</div>
+    <div class="code-line" id="l4">PORTD = (data & 0xF0); </div>
+    <div class="code-line" id="l5">lcd_pulse();</div>
+    <div class="code-line"></div>
+    <div class="code-line" id="l6">// 2. Send Low Nibble (0011)</div>
+    <div class="code-line" id="l7">PORTD = (data << 4);</div>
+    <div class="code-line" id="l8">lcd_pulse();</div>
+    <div style="margin-top: 20px; font-size: 12px; color: #888;">
+        Notice how we use the same 4 pins (PD4-PD7) twice to send a full 8-bit byte!
+    </div>
+</div>
+
+<div id="viz-panel">
+    <div id="canvas-container" style="width:100%; height:100%;"></div>
+    <div id="overlay">
+        <div id="step-text">WAITING...</div>
+        <div style="margin-top:10px;">
+            BYTE: <span class="nibble-box high">1101</span><span class="nibble-box low">0011</span>
+        </div>
+    </div>
+</div>
+
+<script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const scene = new THREE.Scene();
+    const container = document.getElementById('canvas-container');
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    camera.position.set(0, 5, 12);
+    const controls = new OrbitControls(camera, renderer.domElement);
+
+    // Light
+    const light = new THREE.PointLight(0xffffff, 100); light.position.set(5,5,5); scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+
+    // Data Blocks
+    const createBit = (x, y, color) => {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color }));
+        mesh.position.set(x, y, 0);
+        return mesh;
+    };
+
+    const highNibble = new THREE.Group();
+    const lowNibble = new THREE.Group();
+    for(let i=0; i<4; i++) {
+        highNibble.add(createBit(-5 + i, 2, 0xff79c6));
+        lowNibble.add(createBit(-5 + i, 0, 0x50fa7b));
+    }
+    scene.add(highNibble); scene.add(lowNibble);
+
+    // The "Narrow Door" (LCD Pins 4-7)
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.5, 4, 2), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    door.position.set(2, 1, 0);
+    scene.add(door);
+
+    // LCD Receiving Area
+    const lcd = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.5), new THREE.MeshStandardMaterial({ color: 0x0000ff, transparent: true, opacity: 0.5 }));
+    lcd.position.set(6, 1, 0);
+    scene.add(lcd);
+
+    let state = 0; // 0: Start, 1: High Moving, 2: Reset, 3: Low Moving
+    let clock = 0;
+
+    function animate() {
+        requestAnimationFrame(animate);
+        clock++;
+
+        if (clock % 200 === 0) state = (state + 1) % 4;
+
+        // Reset positions
+        if (state === 0) {
+            highNibble.position.x = 0; lowNibble.position.x = 0;
+            document.querySelectorAll('.code-line').forEach(l=>l.classList.remove('highlight'));
+            document.getElementById('l2').classList.add('highlight');
+            document.getElementById('step-text').innerText = "DATA READY (0xD3)";
+        }
+        
+        // Move High Nibble
+        if (state === 1) {
+            if (highNibble.position.x < 11) highNibble.position.x += 0.1;
+            document.getElementById('l4').classList.add('highlight');
+            document.getElementById('step-text').innerText = "SENDING HIGH NIBBLE";
+        }
+
+        // Move Low Nibble
+        if (state === 3) {
+            if (lowNibble.position.x < 11) lowNibble.position.x += 0.1;
+            lowNibble.position.y = 1; // Shift to the same pins
+            document.getElementById('l7').classList.add('highlight');
+            document.getElementById('step-text').innerText = "SENDING LOW NIBBLE";
+        }
+
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>
