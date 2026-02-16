@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>F_CPU: The Hardware-Software Bridge</title>
+    <style>
+        body { margin: 0; display: flex; height: 100vh; background: #0a0a0a; color: #00ff00; font-family: 'Fira Code', monospace; overflow: hidden; }
+        #code-panel { width: 35%; background: #121212; border-right: 2px solid #333; padding: 20px; }
+        #viz-panel { width: 65%; position: relative; }
+        .code-line { padding: 4px; margin: 2px 0; border-radius: 4px; font-size: 14px; color: #666; }
+        .highlight { background: rgba(0, 255, 0, 0.2); color: #fff; border-left: 3px solid #00ff00; }
+        #overlay { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #00ff00; border-radius: 8px; max-width: 300px; }
+        .val { color: #ffaa00; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="code-panel">
+    <h3>Why #define F_CPU?</h3>
+    <div class="code-line highlight" id="l1">#define F_CPU 16000000UL</div>
+    <div class="code-line">// This line is a "Map" for the compiler.</div>
+    <div class="code-line"></div>
+    <div class="code-line" id="l2">_delay_ms(1000);</div>
+    <div class="code-line" style="margin-top:20px; color: #888; font-size: 12px;">
+        The chip only knows "Beats". <br><br>
+        If the heart beats 16,000,000 times a second, then 1ms is 16,000 beats.<br><br>
+        Without the top line, the chip doesn't know how many beats make a millisecond!
+    </div>
+</div>
+
+<div id="viz-panel">
+    <div id="canvas-container" style="width:100%; height:100%;"></div>
+    <div id="overlay">
+        <div style="font-size: 18px; border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 10px;">The Translation</div>
+        PHYSICAL HEART: <span class="val">16,000,000 bpm</span><br>
+        SOFTWARE MAP: <span id="map-val" class="val">16,000,000</span><br>
+        <hr style="border:0; border-top:1px solid #333;">
+        RESULT: <span id="res-text" style="color:#00ff00;">PERFECT TIMING</span>
+    </div>
+</div>
+
+<script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const scene = new THREE.Scene();
+    const container = document.getElementById('canvas-container');
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    camera.position.set(0, 5, 12);
+    const controls = new OrbitControls(camera, renderer.domElement);
+
+    // Light
+    const light = new THREE.PointLight(0xffffff, 100); light.position.set(5,5,5); scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+
+    // 1. The Physical Heart (Crystal)
+    const crystalGeo = new THREE.BoxGeometry(2, 1, 3);
+    const crystalMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.9, roughness: 0.1 });
+    const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+    crystal.position.set(-4, 0, 0);
+    scene.add(crystal);
+
+    // 2. The "Bridge" (The Code Line)
+    const bridgeGeo = new THREE.CylinderGeometry(0.5, 0.5, 4, 16);
+    const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
+    const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
+    bridge.rotation.z = Math.PI / 2;
+    bridge.position.set(0, 0, 0);
+    scene.add(bridge);
+
+    // 3. The "Result" (1 Second Meter)
+    const meterGeo = new THREE.TorusGeometry(2, 0.2, 16, 100);
+    const meterMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const meter = new THREE.Mesh(meterGeo, meterMat);
+    meter.position.set(4, 0, 0);
+    scene.add(meter);
+
+    const needleGeo = new THREE.BoxGeometry(0.1, 2, 0.1);
+    const needleMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const needle = new THREE.Mesh(needleGeo, needleMat);
+    needle.position.set(4, 1, 0);
+    needle.geometry.translate(0, 1, 0); // Rotate around center
+    scene.add(needle);
+
+    let time = 0;
+    function animate() {
+        requestAnimationFrame(animate);
+        time += 0.05;
+
+        // Crystal pulses physically
+        const pulse = 1 + Math.sin(time * 10) * 0.1;
+        crystal.scale.set(pulse, pulse, pulse);
+
+        // Needle rotates - representing 1 second
+        needle.rotation.z -= 0.05;
+        if (needle.rotation.z < -Math.PI * 2) needle.rotation.z = 0;
+
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>
