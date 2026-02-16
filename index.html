@@ -2,192 +2,168 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Arduino Timer1 3D Visualization</title>
+    <title>Bare-Metal C++: Code to Hardware Visualizer</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Courier New', monospace; }
-        #info {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #00ff00;
-            background: rgba(0,0,0,0.85);
-            padding: 20px;
-            border: 2px solid #00ff00;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0,255,0,0.2);
-            pointer-events: none;
-            max-width: 300px;
+        body { margin: 0; display: flex; height: 100vh; background: #0a0a0a; color: #00ff00; font-family: 'Fira Code', 'Courier New', monospace; overflow: hidden; }
+        
+        /* Code Side */
+        #code-panel { width: 40%; background: #121212; border-right: 2px solid #333; padding: 20px; overflow-y: auto; }
+        .code-line { padding: 2px 5px; margin: 1px 0; border-radius: 3px; font-size: 14px; color: #888; transition: all 0.3s; }
+        .highlight { background: rgba(0, 255, 0, 0.2); color: #fff; border-left: 3px solid #00ff00; padding-left: 10px; }
+        .comment { color: #666; font-style: italic; }
+        .keyword { color: #ff79c6; }
+        .register { color: #50fa7b; font-weight: bold; }
+
+        /* 3D Side */
+        #viz-panel { width: 60%; position: relative; }
+        #canvas-container { width: 100%; height: 100%; }
+
+        /* Overlay UI */
+        #dashboard {
+            position: absolute; bottom: 20px; left: 20px; right: 20px;
+            background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #00ff00;
+            display: flex; justify-content: space-around; align-items: center; border-radius: 8px;
         }
-        h3 { margin-top: 0; color: #fff; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .stat-line { display: flex; justify-content: space-between; font-size: 14px; margin: 5px 0; }
-        #status { font-weight: bold; color: #ffaa00; font-size: 18px; margin-top: 10px; text-align: center; }
+        .stat { text-align: center; }
+        .val { font-size: 20px; color: #ffaa00; }
     </style>
 </head>
 <body>
-    <div id="info">
-        <h3>ATmega328P Timer1 Visualizer</h3>
-        <p>1. <b>Crystal (Red)</b>: 16MHz Source</p>
-        <p>2. <b>Prescaler (Gears)</b>: Divides by 1024</p>
-        <p>3. <b>Timer Register (Green Tank)</b>: Fills up</p>
-        <p>4. <b>LED (Blue)</b>: Toggles on overflow</p>
-        <div id="status">Ticks: 0 / 15625</div>
+
+<div id="code-panel">
+    <h3>embeddedPractice.cpp</h3>
+    <div id="line-1" class="code-line"><span class="keyword">#define</span> F_CPU 16000000UL</div>
+    <div id="line-2" class="code-line"><span class="keyword">#include</span> &lt;avr/io.h&gt;</div>
+    <div class="code-line"></div>
+    <div id="line-init" class="code-line"><span class="keyword">void</span> init_timer1() {</div>
+    <div id="line-wgm" class="code-line">  <span class="register">TCCR1B</span> |= (1 << WGM12); <span class="comment">// Set CTC Mode</span></div>
+    <div id="line-ocr" class="code-line">  <span class="register">OCR1A</span> = 15625; <span class="comment">// Target for 1s</span></div>
+    <div id="line-cs" class="code-line">  <span class="register">TCCR1B</span> |= (1 << CS12) | (1 << CS10); <span class="comment">// 1024 Prescaler</span></div>
+    <div class="code-line">}</div>
+    <div class="code-line"></div>
+    <div id="line-main" class="code-line"><span class="keyword">int</span> main(<span class="keyword">void</span>) {</div>
+    <div id="line-ddr" class="code-line">  <span class="register">DDRD</span> = 0xFF; <span class="comment">// Set All PORTD as Output</span></div>
+    <div id="line-call" class="code-line">  init_timer1();</div>
+    <div class="code-line"></div>
+    <div id="line-loop" class="code-line">  <span class="keyword">while</span>(1) {</div>
+    <div id="line-if" class="code-line">    <span class="keyword">if</span> (<span class="register">TIFR1</span> & (1 << OCF1A)) {</div>
+    <div id="line-toggle" class="code-line">      <span class="register">PORTD</span> ^= (1 << PORTD4); <span class="comment">// Toggle LED</span></div>
+    <div id="line-clear" class="code-line">      <span class="register">TIFR1</span> |= (1 << OCF1A); <span class="comment">// Clear Flag</span></div>
+    <div id="line-endif" class="code-line">    }</div>
+    <div class="code-line">  }</div>
+    <div class="code-line">}</div>
+</div>
+
+<div id="viz-panel">
+    <div id="canvas-container"></div>
+    <div id="dashboard">
+        <div class="stat">CLOCK<br><span class="val">16 MHz</span></div>
+        <div class="stat">PRESCALER<br><span class="val">/ 1024</span></div>
+        <div class="stat">COUNT<br><span id="live-count" class="val">0</span></div>
+        <div class="stat">STATUS<br><span id="live-status" class="val">COUNTING...</span></div>
     </div>
+</div>
 
-    <!-- Import Three.js from CDN -->
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
-    </script>
+    }
+</script>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
-        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // Scene Setup
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111111);
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+    // Scene setup
+    const scene = new THREE.Scene();
+    const container = document.getElementById('canvas-container');
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
 
-        const controls = new OrbitControls(camera, renderer.domElement);
-        camera.position.set(0, 5, 15);
-        controls.update();
+    const controls = new OrbitControls(camera, renderer.domElement);
+    camera.position.set(0, 5, 12);
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0x404040);
-        scene.add(ambientLight);
-        const pointLight = new THREE.PointLight(0xffffff, 2, 100);
-        pointLight.position.set(10, 10, 10);
-        scene.add(pointLight);
+    // Objects
+    const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(1), new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x330000 }));
+    crystal.position.set(-6, 0, 0);
+    scene.add(crystal);
 
-        // --- 1. The Crystal (Source) ---
-        const crystalGeo = new THREE.OctahedronGeometry(1, 0);
-        const crystalMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x550000, flatShading: true });
-        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-        crystal.position.set(-6, 0, 0);
-        scene.add(crystal);
+    const tank = new THREE.Mesh(new THREE.BoxGeometry(3, 6, 3), new THREE.MeshPhysicalMaterial({ transmission: 0.9, transparent: true, opacity: 0.2 }));
+    tank.position.set(2, 0, 0);
+    scene.add(tank);
 
-        // --- 2. The Prescaler (Gears) ---
-        const gearGroup = new THREE.Group();
-        const gearGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.5, 12);
-        const gearMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8, roughness: 0.2 });
-        const gear1 = new THREE.Mesh(gearGeo, gearMat);
-        gear1.rotation.x = Math.PI / 2;
-        gear1.position.set(-2, 0, 0);
+    const liquid = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1, 2.8), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
+    liquid.position.set(2, -3, 0);
+    scene.add(liquid);
+
+    const targetLine = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.1, 3.5), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
+    targetLine.position.set(2, 2.5, 0);
+    scene.add(targetLine);
+
+    const led = new THREE.Mesh(new THREE.SphereGeometry(1), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+    led.position.set(7, 0, 0);
+    scene.add(led);
+
+    // Lighting
+    const light = new THREE.PointLight(0xffffff, 100); light.position.set(5, 5, 5); scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+
+    // Logic
+    let count = 0;
+    const maxCount = 15625;
+    let ledOn = false;
+
+    function highlight(id) {
+        document.querySelectorAll('.code-line').forEach(l => l.classList.remove('highlight'));
+        const el = document.getElementById(id);
+        if(el) el.classList.add('highlight');
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
         
-        const gear2 = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.5, 8), gearMat);
-        gear2.rotation.x = Math.PI / 2;
-        gear2.position.set(-0.5, 0.5, 0.5);
+        // 1. Crystal Spin (Always)
+        crystal.rotation.y += 0.2;
 
-        gearGroup.add(gear1);
-        gearGroup.add(gear2);
-        scene.add(gearGroup);
-
-        // Connection Pipe (Crystal -> Gear)
-        const pipe1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4, 8), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-        pipe1.rotation.z = Math.PI / 2;
-        pipe1.position.set(-4, 0, 0);
-        scene.add(pipe1);
-
-        // Connection Pipe (Gear -> Timer)
-        const pipe2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3, 8), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-        pipe2.rotation.z = Math.PI / 2;
-        pipe2.position.set(1.5, 0, 0);
-        scene.add(pipe2);
-
-        // --- 3. The Timer Bucket (Register) ---
-        const tankGroup = new THREE.Group();
-        // Glass container
-        const tankGeo = new THREE.BoxGeometry(3, 6, 3);
-        const tankMat = new THREE.MeshPhysicalMaterial({ 
-            color: 0xffffff, transmission: 0.9, opacity: 0.3, transparent: true, roughness: 0, metalness: 0 
-        });
-        const tank = new THREE.Mesh(tankGeo, tankMat);
-        tank.position.set(5, 0, 0);
-        tankGroup.add(tank);
-
-        // The Liquid (The Count)
-        const liquidGeo = new THREE.BoxGeometry(2.8, 1, 2.8);
-        const liquidMat = new THREE.MeshStandardMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 });
-        const liquid = new THREE.Mesh(liquidGeo, liquidMat);
-        liquid.position.set(5, -2.5, 0); // Start at bottom
-        liquid.scale.y = 0.01; // Start empty
-        tankGroup.add(liquid);
-
-        // Threshold Line
-        const lineGeo = new THREE.BoxGeometry(3.2, 0.1, 3.2);
-        const lineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
-        const line = new THREE.Mesh(lineGeo, lineMat);
-        line.position.set(5, 2.5, 0); // The 15625 Mark
-        tankGroup.add(line);
-
-        scene.add(tankGroup);
-
-        // --- 4. The LED (Action) ---
-        const ledGeo = new THREE.SphereGeometry(1, 32, 32);
-        const ledMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-        const led = new THREE.Mesh(ledGeo, ledMat);
-        led.position.set(9, 0, 0);
-        scene.add(led);
-
-        // Animation Variables
-        let count = 0;
-        const target = 15625; 
-        const speedMultiplier = 200; // Speed up for visualization (visual ticks per frame)
-        let ledState = false;
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // 1. Crystal spins crazy fast
-            crystal.rotation.x += 0.5;
-            crystal.rotation.y += 0.3;
-
-            // 2. Gears spin slower (1/1024 roughly represented)
-            gear1.rotation.z += 0.05;
-            gear2.rotation.z -= 0.1;
-
-            // 3. Fill the tank
-            count += speedMultiplier;
-            if (count > target) {
-                count = 0;
-                // Toggle LED
-                ledState = !ledState;
-                led.material.color.setHex(ledState ? 0x0000ff : 0x222222);
-                led.material.emissive.setHex(ledState ? 0x0000aa : 0x000000);
-            }
-
-            // Update Liquid Height
-            // Map 0..15625 to height 0..5 (tank height is 6, internal is ~5.8)
-            const progress = count / target;
-            const maxLiquidHeight = 5.8;
-            liquid.scale.y = Math.max(0.01, progress * maxLiquidHeight); 
-            liquid.position.y = -3 + (liquid.scale.y / 2); // Keep base at bottom
-
-            // Update UI
-            document.getElementById('status').innerText = `Count: ${Math.floor(count)} / ${target}`;
-
-            controls.update();
-            renderer.render(scene, camera);
+        // 2. Logic Simulation
+        count += 150; // Speeded up for visual
+        
+        if (count < maxCount) {
+            highlight('line-if');
+            document.getElementById('live-status').innerText = "COUNTING...";
+            document.getElementById('live-status').style.color = "#ffaa00";
+        } else {
+            count = 0;
+            ledOn = !ledOn;
+            led.material.color.setHex(ledOn ? 0x00ff00 : 0x222222);
+            led.material.emissive.setHex(ledOn ? 0x003300 : 0x000000);
+            
+            highlight('line-toggle');
+            document.getElementById('live-status').innerText = "MATCH!";
+            document.getElementById('live-status').style.color = "#00ff00";
         }
 
-        // Handle Resize
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        // Update liquid
+        const scale = (count / maxCount) * 5.8;
+        liquid.scale.y = Math.max(0.01, scale);
+        liquid.position.y = -3 + (liquid.scale.y / 2);
+        
+        document.getElementById('live-count').innerText = Math.floor(count);
 
-        // Start
-        animate();
-    </script>
+        renderer.render(scene, camera);
+    }
+
+    animate();
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+</script>
 </body>
 </html>
