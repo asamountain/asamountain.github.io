@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arduino Timer1 3D Visualization</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Courier New', monospace; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #00ff00;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border: 1px solid #00ff00;
+            pointer-events: none;
+        }
+        .label {
+            position: absolute;
+            color: white;
+            background: rgba(0,0,0,0.6);
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>ATmega328P Timer1 Visualizer</h3>
+        <p>1. <b>Crystal (Red)</b>: 16MHz Source</p>
+        <p>2. <b>Prescaler (Gears)</b>: Divides by 1024</p>
+        <p>3. <b>Timer Register (Green Tank)</b>: Fills up</p>
+        <p>4. <b>LED (Blue)</b>: Toggles on overflow</p>
+        <div id="status">Ticks: 0 / 15625</div>
+    </div>
+
+    <!-- Import Three.js from CDN -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
+        // Scene Setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        camera.position.set(0, 5, 15);
+        controls.update();
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        const pointLight = new THREE.PointLight(0xffffff, 2, 100);
+        pointLight.position.set(10, 10, 10);
+        scene.add(pointLight);
+
+        // --- 1. The Crystal (Source) ---
+        const crystalGeo = new THREE.OctahedronGeometry(1, 0);
+        const crystalMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x550000, flatShading: true });
+        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        crystal.position.set(-6, 0, 0);
+        scene.add(crystal);
+
+        // --- 2. The Prescaler (Gears) ---
+        const gearGroup = new THREE.Group();
+        const gearGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.5, 12);
+        const gearMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8, roughness: 0.2 });
+        const gear1 = new THREE.Mesh(gearGeo, gearMat);
+        gear1.rotation.x = Math.PI / 2;
+        gear1.position.set(-2, 0, 0);
+        
+        const gear2 = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.5, 8), gearMat);
+        gear2.rotation.x = Math.PI / 2;
+        gear2.position.set(-0.5, 0.5, 0.5);
+
+        gearGroup.add(gear1);
+        gearGroup.add(gear2);
+        scene.add(gearGroup);
+
+        // Connection Pipe (Crystal -> Gear)
+        const pipe1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4, 8), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+        pipe1.rotation.z = Math.PI / 2;
+        pipe1.position.set(-4, 0, 0);
+        scene.add(pipe1);
+
+        // Connection Pipe (Gear -> Timer)
+        const pipe2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3, 8), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+        pipe2.rotation.z = Math.PI / 2;
+        pipe2.position.set(1.5, 0, 0);
+        scene.add(pipe2);
+
+        // --- 3. The Timer Bucket (Register) ---
+        const tankGroup = new THREE.Group();
+        // Glass container
+        const tankGeo = new THREE.BoxGeometry(3, 6, 3);
+        const tankMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0xffffff, transmission: 0.9, opacity: 0.3, transparent: true, roughness: 0, metalness: 0 
+        });
+        const tank = new THREE.Mesh(tankGeo, tankMat);
+        tank.position.set(5, 0, 0);
+        tankGroup.add(tank);
+
+        // The Liquid (The Count)
+        const liquidGeo = new THREE.BoxGeometry(2.8, 1, 2.8);
+        const liquidMat = new THREE.MeshStandardMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 });
+        const liquid = new THREE.Mesh(liquidGeo, liquidMat);
+        liquid.position.set(5, -2.5, 0); // Start at bottom
+        liquid.scale.y = 0.01; // Start empty
+        tankGroup.add(liquid);
+
+        // Threshold Line
+        const lineGeo = new THREE.BoxGeometry(3.2, 0.1, 3.2);
+        const lineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+        const line = new THREE.Mesh(lineGeo, lineMat);
+        line.position.set(5, 2.5, 0); // The 15625 Mark
+        tankGroup.add(line);
+
+        scene.add(tankGroup);
+
+        // --- 4. The LED (Action) ---
+        const ledGeo = new THREE.SphereGeometry(1, 32, 32);
+        const ledMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        const led = new THREE.Mesh(ledGeo, ledMat);
+        led.position.set(9, 0, 0);
+        scene.add(led);
+
+        // Animation Variables
+        let count = 0;
+        const target = 15625; 
+        const speedMultiplier = 200; // Speed up for visualization (visual ticks per frame)
+        let ledState = false;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 1. Crystal spins crazy fast
+            crystal.rotation.x += 0.5;
+            crystal.rotation.y += 0.3;
+
+            // 2. Gears spin slower (1/1024 roughly represented)
+            gear1.rotation.z += 0.05;
+            gear2.rotation.z -= 0.1;
+
+            // 3. Fill the tank
+            count += speedMultiplier;
+            if (count > target) {
+                count = 0;
+                // Toggle LED
+                ledState = !ledState;
+                led.material.color.setHex(ledState ? 0x0000ff : 0x222222);
+                led.material.emissive.setHex(ledState ? 0x0000aa : 0x000000);
+            }
+
+            // Update Liquid Height
+            // Map 0..15625 to height 0..5 (tank height is 6, internal is ~5.8)
+            const progress = count / target;
+            const maxLiquidHeight = 5.8;
+            liquid.scale.y = Math.max(0.01, progress * maxLiquidHeight); 
+            liquid.position.y = -3 + (liquid.scale.y / 2); // Keep base at bottom
+
+            // Update UI
+            document.getElementById('status').innerText = `Count: ${Math.floor(count)} / ${target}`;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start
+        animate();
+    </script>
+</body>
+</html>
